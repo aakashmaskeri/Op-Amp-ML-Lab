@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Analog Trainer (Unified Log)</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #eef2f3; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        
+        .main-container { display: flex; gap: 20px; align-items: flex-start; }
+        
+        /* THE CIRCUIT BOARD */
+        .board {
+            position: relative; width: 600px; height: 380px;
+            background: #2c3e50; border-radius: 15px;
+            box-shadow: 0 15px 25px rgba(0,0,0,0.2);
+            color: white; margin-bottom: 20px;
+        }
+
+        /* COMPONENT STYLES */
+        .potentiometer {
+            position: absolute; width: 60px; height: 60px;
+            border: 3px solid #f1c40f; border-radius: 50%;
+            background: #34495e; display: flex; justify-content: center; align-items: center;
+            font-size: 12px; font-weight: bold; color: #f1c40f;
+            transition: transform 0.3s; cursor: pointer;
+        }
+        .potentiometer::after { content: ''; position: absolute; top: -5px; width: 2px; height: 10px; background: white; }
+        .pot-fixed { border-color: #7f8c8d; color: #bdc3c7; cursor: not-allowed; }
+
+        .op-amp {
+            position: absolute; top: 100px; left: 300px; width: 0; height: 0;
+            border-left: 100px solid #ecf0f1; border-top: 60px solid transparent; border-bottom: 60px solid transparent;
+        }
+        .op-amp-label { position: absolute; top: 145px; left: 320px; color: #2c3e50; font-weight: bold; font-size: 14px; z-index: 10;}
+
+        .input-btn {
+            position: absolute; left: 30px; width: 80px; padding: 10px;
+            background: #95a5a6; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold;
+        }
+        .input-btn.active { background: #3498db; }
+
+        .output-led {
+            position: absolute; top: 135px; right: 40px;
+            width: 60px; height: 60px; border-radius: 50%;
+            background: #333; border: 4px solid #555;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 12px;
+        }
+
+        /* CONTROLS */
+        .controls { display: flex; gap: 10px; margin-top: 10px;}
+        button.action-btn {
+            padding: 12px 24px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer;
+            background: #34495e; color: white; transition: 0.2s;
+        }
+        button.action-btn:hover { background: #2c3e50; transform: translateY(-2px); }
+        button.action-btn:disabled { background: #bdc3c7; cursor: not-allowed; transform: none; }
+
+        /* DATA TABLE STYLES */
+        .table-container {
+            width: 400px; height: 500px; overflow-y: auto;
+            background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 13px;
+        }
+        table { width: 100%; border-collapse: collapse; text-align: center; }
+        th { background: #34495e; color: white; padding: 8px; position: sticky; top: 0; }
+        td { border-bottom: 1px solid #ddd; padding: 6px; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        
+        .auto-controls {
+            margin-top: 15px; padding: 10px; border-top: 1px solid #7f8c8d;
+            display: flex; gap: 10px; align-items: center; color: #fff;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Analog AND Gate Trainer</h1>
+    
+    <div class="main-container">
+        
+        <div style="display:flex; flex-direction:column;">
+            <div class="board">
+                <button id="x1" class="input-btn" style="top: 80px;" onclick="toggleInput('x1')">IN 1</button>
+                <button id="x2" class="input-btn" style="top: 200px;" onclick="toggleInput('x2')">IN 2</button>
+
+                <div class="potentiometer" id="pot_w1" style="top: 75px; left: 160px;">w1<br><span id="txt_w1">0.5</span></div>
+                <div class="potentiometer" id="pot_w2" style="top: 195px; left: 160px;">w2<br><span id="txt_w2">0.5</span></div>
+
+                <div class="op-amp"></div>
+                <div class="op-amp-label">OP97</div>
+                
+                <div class="potentiometer pot-fixed" id="pot_t" style="top: 250px; left: 320px; width: 50px; height: 50px;">
+                    T<br><span id="txt_t">2.5</span>
+                </div>
+                <div style="position:absolute; top:310px; left:300px; font-size:10px; color:#bdc3c7;">(Fixed Midpoint)</div>
+
+                <div id="led" class="output-led">
+                    <span id="led-volts">0.0V</span>
+                    <span id="led-logic" style="font-weight:bold; color:#f1c40f;">LOW</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="btn-1" class="action-btn" onclick="stepForward()">1. Forward</button>
+                <button id="btn-2" class="action-btn" onclick="stepBackward()" disabled>2. Backward</button>
+                <button id="btn-3" class="action-btn" onclick="stepUpdate()" disabled>3. Update</button>
+                <button class="action-btn" style="background:#c0392b; margin-left:auto;" onclick="reset()">Reset All</button>
+            </div>
+
+            <div class="board auto-controls" style="height: auto; width: 580px; background: #34495e;">
+                <strong>Algorithmic Training:</strong>
+                <input type="number" id="train-steps" value="10" style="width: 50px; padding: 5px; border-radius: 4px; border:none;">
+                <span>steps on current input.</span>
+                <button class="action-btn" style="padding: 8px 15px; font-size: 14px; background: #27ae60;" onclick="runTrainingLoop()">Run Loop</button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>In</th>
+                        <th>Out (V)</th>
+                        <th>Loss</th>
+                        <th>w1</th>
+                        <th>w2</th>
+                    </tr>
+                </thead>
+                <tbody id="log-body">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div id="debug-log" style="margin-top:20px; color: #555; font-family: monospace;"></div>
+
+    <script>
+        let inputs = { x1: 0, x2: 0 };
+        let rails = { min: 0.0, max: 5.0 };
+        let globalStepCounter = 0;
+
+        // Temporary storage for manual row construction
+        let manualStepData = { 
+            vOut: 0, 
+            loss: 0,
+            target: 0
+        };
+
+        function log(msg) { document.getElementById('debug-log').innerText = msg; }
+
+        function toggleInput(key) {
+            inputs[key] = inputs[key] === 0 ? 1 : 0;
+            document.getElementById(key).classList.toggle('active');
+            
+            // Allow user to switch back to Forward mode anytime
+            document.getElementById('btn-1').disabled = false;
+            document.getElementById('btn-2').disabled = true;
+            document.getElementById('btn-3').disabled = true;
+            log("Inputs changed. Ready for Forward Pass.");
+        }
+
+        // --- MANUAL STEP 1: FORWARD ---
+        async function stepForward() {
+            const res = await fetch('/step_forward', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(inputs)
+            });
+            const data = await res.json();
+            
+            // 1. Visualize
+            updateVisuals(data.out);
+            
+            // 2. Store Data for Log
+            manualStepData.vOut = data.out;
+            
+            // 3. Enable Next Step
+            document.getElementById('btn-1').disabled = true;
+            document.getElementById('btn-2').disabled = false;
+        }
+
+        // --- MANUAL STEP 2: BACKWARD ---
+        async function stepBackward() {
+            const res = await fetch('/step_backward', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(inputs)
+            });
+            const data = await res.json();
+            
+            // 1. Calculate Target/Loss for Log
+            // Error is returned by backend, so Loss = Error^2
+            manualStepData.loss = Math.pow(data.error, 2);
+            
+            // 2. Logic for target display
+            manualStepData.target = (inputs.x1 && inputs.x2) ? rails.max : rails.min;
+
+            log(`Gradients: w1=${data.w1.toFixed(3)}, w2=${data.w2.toFixed(3)}`);
+            
+            // 3. Enable Next Step
+            document.getElementById('btn-2').disabled = true;
+            document.getElementById('btn-3').disabled = false;
+        }
+
+        // --- MANUAL STEP 3: UPDATE ---
+        async function stepUpdate() {
+            const res = await fetch('/step_update', { method: 'POST' });
+            const weights = await res.json();
+            
+            // 1. Update Board
+            updatePots(weights);
+            
+            // 2. LOG THE COMPLETED MANUAL STEP
+            addTableRow({
+                x1: inputs.x1,
+                x2: inputs.x2,
+                output: manualStepData.vOut,
+                loss: manualStepData.loss,
+                w1: weights.w1,
+                w2: weights.w2
+            });
+
+            log("Manual Step Complete. Row added to table.");
+            
+            // 3. Reset Buttons
+            document.getElementById('btn-3').disabled = true;
+            document.getElementById('btn-1').disabled = false;
+        }
+
+        // --- AUTOMATIC LOOP ---
+        async function runTrainingLoop() {
+            let steps = document.getElementById('train-steps').value;
+            const res = await fetch('/train_loop', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    steps: steps, 
+                    x1: inputs.x1, 
+                    x2: inputs.x2
+                })
+            });
+            const history = await res.json();
+            
+            // Batch append rows
+            history.forEach(row => addTableRow(row));
+            
+            // Update UI to final state
+            let final = history[history.length - 1];
+            updatePots(final);
+            updateVisuals(final.output);
+            
+            // Reset Manual buttons so user can continue seamlessly
+            document.getElementById('btn-1').disabled = false;
+            document.getElementById('btn-2').disabled = true;
+            document.getElementById('btn-3').disabled = true;
+            
+            log(`Ran ${steps} auto-steps. Table updated.`);
+        }
+
+        // --- TABLE LOGIC ---
+        function addTableRow(data) {
+            globalStepCounter++;
+            const tbody = document.getElementById('log-body');
+            const tr = document.createElement('tr');
+            
+            tr.innerHTML = `
+                <td>${globalStepCounter}</td>
+                <td>(${data.x1}, ${data.x2})</td>
+                <td>${data.output.toFixed(2)}</td>
+                <td style="color:${data.loss > 0.1 ? 'red' : 'green'}">${data.loss.toFixed(3)}</td>
+                <td>${data.w1.toFixed(2)}</td>
+                <td>${data.w2.toFixed(2)}</td>
+            `;
+            
+            // Insert at top? Or bottom. Let's do bottom.
+            tbody.prepend(tr); // Actually prepend (Newest First) is usually better for logs
+        }
+
+        // --- HELPERS ---
+        function updateVisuals(vOut) {
+            const led = document.getElementById('led');
+            const ledLogic = document.getElementById('led-logic');
+            document.getElementById('led-volts').innerText = vOut.toFixed(2) + "V";
+
+            let range = rails.max - rails.min;
+            let normalized = (vOut - rails.min) / range;
+            let intensity = Math.max(0, Math.min(255, Math.floor(normalized * 255)));
+            led.style.background = `rgb(0, ${intensity}, 0)`;
+            
+            let midpoint = (rails.max + rails.min) / 2;
+            if (vOut > midpoint) {
+                ledLogic.innerText = "HIGH";
+                led.style.borderColor = "#2ecc71";
+            } else {
+                ledLogic.innerText = "LOW";
+                led.style.borderColor = "#555";
+            }
+        }
+
+        function updatePots(w) {
+            document.getElementById('txt_w1').innerText = w.w1.toFixed(2);
+            document.getElementById('txt_w2').innerText = w.w2.toFixed(2);
+            if(w.t) document.getElementById('txt_t').innerText = w.t.toFixed(2);
+            
+            document.getElementById('pot_w1').style.transform = `rotate(${w.w1 * 270 - 135}deg)`;
+            document.getElementById('pot_w2').style.transform = `rotate(${w.w2 * 270 - 135}deg)`;
+        }
+
+        async function reset() {
+            await fetch('/reset', { method: 'POST' });
+            location.reload();
+        }
+
+        // Init
+        fetch('/state').then(r=>r.json()).then(d => {
+            updatePots(d.weights);
+            rails = d.rails;
+        });
+
+    </script>
+</body>
+</html>
