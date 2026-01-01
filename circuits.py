@@ -2,29 +2,45 @@ import numpy as np
 from activations import OpAmpClippedLinear
 
 class AnalogCircuitBase:
+    # Constructor
     def __init__(self, eta=0.05):
-        self.eta = eta
-        self.vccm = 0.0
-        self.vccp = 5.0
-        self.weights = {}
+        self.eta = eta      # greek letter eta, which controls step size for backprop
+        self.vccm = 0.0     # positive rail voltage
+        self.vccp = 5.0     # negative rail voltage
+        self.weights = {}   
         self.voltages = {}
         self.gradients = {}
-        # Default Op-Amp Setup (Gain = 5.0)
-        # Rf=100k, R1=20k. Threshold centered at 2.5V
+       
+        # Midpoint is the halfway point
         midpoint = (self.vccp + self.vccm) / 2.0
+
+        # Create the op-amp object
         self.act_fn = OpAmpClippedLinear(Rf=100.0, R1=20.0, initial_thresh=midpoint)
 
     def set_rails(self, low, high):
+        """
+        Set op-amp rail voltages
+
+        :param low: low rail voltage
+        :param high: high rail voltage
+        """
         self.vccm = float(low)
         self.vccp = float(high)
         self.act_fn.thresh = (self.vccp + self.vccm) / 2.0
 
     def update_weights(self):
         """Standard Gradient Descent with Clipping (0.0 to 1.0)"""
+
+        # Iterate through weights and update weights
         for key in self.weights:
             if key in self.gradients:
+                # Use calculated gradients
                 raw_change = self.eta * self.gradients[key]
+
                 # Clip change to avoid violent swings (+/- 10%)
+                # This was added as the linear region would send 
+                # the weight from close to 1 to close to 0 
+                # and vice-versa frequently
                 clipped_change = max(-0.1, min(0.1, raw_change))
                 self.weights[key] -= clipped_change
                 
@@ -36,7 +52,12 @@ class AnalogCircuitBase:
         self.__init__()
 
 class AnalogAND(AnalogCircuitBase):
-    """Standard Perceptron Topology"""
+    """
+    AND gate circuit representation
+    Uses single neuron
+    """
+
+    # Constructor
     def __init__(self):
         super().__init__()
         self.weights = {
@@ -46,18 +67,39 @@ class AnalogAND(AnalogCircuitBase):
         self.voltages = {'v_out': 0.0, 'out': 0.0}
 
     def forward(self, x1, x2):
+        """
+        Forward activation of AND gate
+        
+        :param x1: digital input 1
+        :param x2: digital input 2
+        """
+
+        # Multiply and accumulate circuit
         s = (x1 * self.weights['w1']) + (x2 * self.weights['w2'])
+
+        # Pass sum to neuron and update output
         val = self.act_fn.forward(s, self.vccm, self.vccp)
         self.voltages['out'] = val
         self.voltages['v_out'] = val
         return self.voltages
 
     def backward(self, target, x1, x2):
+        """
+        Backward pass of AND gate
+        for backpropagation
+        
+        :param target: theoretical response of AND gate
+        :param x1: digital input 1
+        :param x2: digital input 2
+        """
+
+        # Determine error
         out = self.voltages['out']
         error = out - target
         slope = self.act_fn.derivative(out, self.vccm, self.vccp)
         delta = error * slope
 
+        # Calculate gradients
         self.gradients['w1'] = delta * x1
         self.gradients['w2'] = delta * x2
         return error
@@ -68,6 +110,8 @@ class AnalogXOR(AnalogCircuitBase):
     Subtraction is handled structurally by the Output Diff Amp.
     Weights remain positive (0.0 - 1.0).
     """
+
+    # Constructor
     def __init__(self):
         super().__init__()
         self.weights = {
@@ -82,6 +126,13 @@ class AnalogXOR(AnalogCircuitBase):
         self.voltages = {'h_exc': 0.0, 'h_inh': 0.0, 'out': 0.0}
 
     def forward(self, x1, x2):
+        """
+        Forward activation of XOR gate
+        
+        :param x1: digital input 1
+        :param x2: digital input 2
+        """
+
         # 1. Excitatory (Blue)
         s_exc = (x1 * self.weights['w0']) + (x2 * self.weights['w1'])
         self.voltages['h_exc'] = self.act_fn.forward(s_exc, self.vccm, self.vccp)
@@ -99,6 +150,15 @@ class AnalogXOR(AnalogCircuitBase):
         return self.voltages
 
     def backward(self, target, x1, x2):
+        """
+        Backward pass of XOR gate
+        for backpropagation
+        
+        :param target: theoretical response of XOR gate
+        :param x1: digital input 1
+        :param x2: digital input 2
+        """
+
         out = self.voltages['out']
         h_exc, h_inh = self.voltages['h_exc'], self.voltages['h_inh']
 
