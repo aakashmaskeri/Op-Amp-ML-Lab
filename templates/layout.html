@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Op-Amp ML Lab</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #eef2f3; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
+        
+        nav { background: #2c3e50; padding: 15px 30px; display: flex; gap: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        nav a { color: #ecf0f1; text-decoration: none; font-weight: bold; font-size: 18px; padding: 5px 10px; border-radius: 4px; transition: 0.2s; }
+        nav a:hover { background: #34495e; }
+        
+        .container { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 20px; overflow-y: auto; }
+        
+        .board { position: relative; background: #34495e; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.2); margin-bottom: 20px; color: white; }
+        
+        .potentiometer {
+            position: absolute; width: 50px; height: 50px; border: 3px solid #f1c40f; border-radius: 50%;
+            background: #2c3e50; display: flex; justify-content: center; align-items: center; font-size: 10px; color: #f1c40f;
+            transition: transform 0.3s;
+        }
+        .potentiometer::after { content: ''; position: absolute; top: -5px; width: 2px; height: 10px; background: white; }
+        .pot-fixed { border-color: #95a5a6; color: #bdc3c7; }
+
+        .op-amp {
+            position: absolute; width: 0; height: 0;
+            border-left: 60px solid #ecf0f1; border-top: 35px solid transparent; border-bottom: 35px solid transparent;
+        }
+        
+        .action-btn { padding: 10px 20px; font-size: 14px; border: none; border-radius: 5px; cursor: pointer; background: #2980b9; color: white; margin-right: 5px;}
+        .action-btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+        
+        .input-btn {
+            position: absolute; width: 80px; padding: 10px;
+            background: #95a5a6; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold;
+        }
+
+        table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; }
+        th { background: #2c3e50; color: white; padding: 8px; position: sticky; top: 0; }
+        td { border-bottom: 1px solid #ddd; padding: 5px; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/and">AND Gate</a>
+        <a href="/xor">XOR Gate</a>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,233 @@
+{% extends "layout.html" %}
+{% block content %}
+<h2>XOR Gate Training (Excitatory/Inhibitory)</h2>
+
+<div style="display:flex; gap: 20px;">
+    <div class="board" style="width: 800px; height: 500px;">
+        <button id="x1" onclick="toggleInput('x1')" class="input-btn" style="top:150px; left:20px;">IN 1</button>
+        <button id="x2" onclick="toggleInput('x2')" class="input-btn" style="top:300px; left:20px;">IN 2</button>
+        
+        <div style="position:absolute; top:20px; left:100px; width:220px; height:180px; border:2px solid #3498db; border-radius:10px;">
+            <div class="potentiometer" id="pot_w0" style="top:30px; left:20px;">w0<br><span id="txt_w0"></span></div>
+            <div class="potentiometer" id="pot_w1" style="top:100px; left:20px;">w1<br><span id="txt_w1"></span></div>
+            <div class="op-amp" style="top:70px; left:140px;"></div>
+        </div>
+        <div style="position:absolute; top:250px; left:100px; width:220px; height:180px; border:2px solid #e74c3c; border-radius:10px;">
+            <div class="potentiometer" id="pot_w2" style="top:30px; left:20px;">w2<br><span id="txt_w2"></span></div>
+            <div class="potentiometer" id="pot_w3" style="top:100px; left:20px;">w3<br><span id="txt_w3"></span></div>
+            <div class="op-amp" style="top:70px; left:140px;"></div>
+        </div>
+        <div style="position:absolute; top:120px; left:400px; width:250px; height:220px; border:2px solid #2ecc71; border-radius:10px;">
+            <div class="potentiometer" id="pot_w4" style="top:40px; left:30px;">w4 (+)<br><span id="txt_w4"></span></div>
+            <div class="potentiometer" id="pot_w5" style="top:120px; left:30px;">w5 (-)<br><span id="txt_w5"></span></div>
+            <div class="op-amp" style="top:80px; left:150px;"></div>
+        </div>
+
+        <div id="led" style="position:absolute; top:200px; right:60px; width:60px; height:60px; border-radius:50%; background:#333; border:3px solid #555;"></div>
+        <div id="led-val" style="position:absolute; top:270px; right:60px;">0.00V</div>
+    </div>
+    
+    <div style="width: 500px; height: 500px; overflow-y: auto; background: white; border:1px solid #ccc;">
+        <table id="log-table">
+            <thead>
+                <tr>
+                    <th>Step</th>
+                    <th>In</th>
+                    <th>Out</th>
+                    <th>Loss</th>
+                    <th style="font-size:10px; background:#3498db; color:white;">w0</th>
+                    <th style="font-size:10px; background:#3498db; color:white;">w1</th>
+                    <th style="font-size:10px; background:#e74c3c; color:white;">w2</th>
+                    <th style="font-size:10px; background:#e74c3c; color:white;">w3</th>
+                    <th style="font-size:10px; background:#2ecc71; color:white;">w4</th>
+                    <th style="font-size:10px; background:#2ecc71; color:white;">w5</th>
+                </tr>
+            </thead>
+            <tbody id="log-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<div style="margin-top: 20px; background: #ecf0f1; padding: 15px; border-radius: 8px; width: 1300px;">
+    <strong>Manual Step:</strong>
+    <button id="btn-fwd" class="action-btn" onclick="stepForward()">1. Forward</button>
+    <button id="btn-back" class="action-btn" onclick="stepBackward()" disabled>2. Backward</button>
+    <button id="btn-upd" class="action-btn" onclick="stepUpdate()" disabled>3. Update</button>
+    
+    <span style="margin: 0 15px; border-right: 1px solid #bdc3c7;"></span>
+    
+    <strong>Auto Train (Full Cycles):</strong>
+    <label>Epochs:</label>
+    <input type="number" id="train-epochs" value="50" style="width: 50px; padding: 5px;">
+    <button class="action-btn" style="background:#27ae60" onclick="runLoop()">Run Loop</button>
+    <button class="action-btn" style="background:#c0392b; float:right;" onclick="reset()">Reset</button>
+</div>
+
+<script>
+    const CIRCUIT = 'xor'; 
+    let inputs = {x1: 0, x2: 0};
+    let stepCount = 0; // GLOBAL COUNTER
+    
+    let lastOut = 0;
+    let lastLoss = 0;
+
+    async function stepForward() {
+        const res = await fetch(`/api/${CIRCUIT}/step_forward`, { method:'POST', body:JSON.stringify(inputs) });
+        const data = await res.json();
+        lastOut = data.out !== undefined ? data.out : data.v_out;
+        updateUI(data, null);
+        setButtons(true, false, true);
+    }
+
+    async function stepBackward() { 
+        const res = await fetch(`/api/${CIRCUIT}/step_backward`, { method:'POST', body:JSON.stringify(inputs) }); 
+        const data = await res.json();
+        lastLoss = data.loss || 0;
+        setButtons(true, true, false);
+    }
+
+    async function stepUpdate() {
+        const res = await fetch(`/api/${CIRCUIT}/step_update`, {method:'POST'});
+        const w = await res.json();
+        updateUI(null, w);
+        addLog(inputs, lastOut, lastLoss, null, w); 
+        setButtons(false, true, true);
+    }
+
+    async function runLoop() {
+        let epochs = document.getElementById('train-epochs').value;
+        const res = await fetch(`/api/${CIRCUIT}/train_loop`, { 
+            method: 'POST', 
+            body: JSON.stringify({steps: epochs}) 
+        });
+        const history = await res.json();
+        
+        // OPTIMIZATION: Create a "Fragment" to hold rows in memory
+        const fragment = document.createDocumentFragment();
+        
+        // Loop through history without touching the actual page
+        history.forEach(row => {
+            stepCount++; // Increment global counter
+            
+            let tr = document.createElement('tr');
+            
+            // Helper to format values safely
+            const f = (val) => val !== undefined ? val.toFixed(2) : '-';
+            const displayLoss = (row.loss !== undefined && row.loss !== null) ? row.loss.toFixed(3) : '-';
+            
+            // Handle different weight columns for AND (w1, w2) vs XOR (w0-w5)
+            // We detect which circuit based on the weights object
+            let weightCols = '';
+            
+            if (row.weights.w0 !== undefined) {
+                // XOR Columns
+                weightCols = `
+                    <td>${f(row.weights.w0)}</td>
+                    <td>${f(row.weights.w1)}</td>
+                    <td>${f(row.weights.w2)}</td>
+                    <td>${f(row.weights.w3)}</td>
+                    <td>${f(row.weights.w4)}</td>
+                    <td>${f(row.weights.w5)}</td>
+                `;
+            } else {
+                // AND Columns
+                weightCols = `
+                    <td>${f(row.weights.w1)}</td>
+                    <td>${f(row.weights.w2)}</td>
+                `;
+            }
+
+            tr.innerHTML = `
+                <td>${stepCount}</td>
+                <td>${row.x1},${row.x2}</td>
+                <td>${row.output.toFixed(2)}</td>
+                <td style="color:${row.loss < 0.1 ? 'green' : 'red'}">${displayLoss}</td>
+                ${weightCols}
+            `;
+            
+            // Add to fragment (this is instant)
+            fragment.prepend(tr); 
+        });
+        
+        // SINGLE DOM UPDATE: Add all 400+ rows at once
+        document.getElementById('log-body').prepend(fragment);
+        
+        // Update Visuals to the final state
+        if (history.length > 0) {
+            let last = history[history.length-1];
+            updateUI({out: last.output}, last.weights);
+        }
+        
+        setButtons(false, true, true);
+    }
+
+    async function reset() { 
+        await fetch(`/api/${CIRCUIT}/reset`, {method:'POST'}); 
+        location.reload(); 
+    }
+    
+    function toggleInput(k) {
+        inputs[k] = inputs[k] ? 0 : 1;
+        document.getElementById(k).style.background = inputs[k] ? '#e74c3c' : '#95a5a6';
+        setButtons(false, true, true);
+        document.getElementById('led').style.background = '#333';
+        document.getElementById('led-val').innerText = '...';
+    }
+
+    function setButtons(fwdDisabled, backDisabled, updDisabled) {
+        document.getElementById('btn-fwd').disabled = fwdDisabled;
+        document.getElementById('btn-back').disabled = backDisabled;
+        document.getElementById('btn-upd').disabled = updDisabled;
+    }
+
+    function updateUI(v, w) {
+        if(v) {
+            let val = v.out !== undefined ? v.out : v.v_out;
+            if (val !== undefined) {
+                document.getElementById('led-val').innerText = val.toFixed(2) + 'V';
+                document.getElementById('led').style.background = `rgb(0, ${Math.min(255, (val/5.0)*255)}, 0)`;
+            }
+        }
+        if(w) {
+            ['w0','w1','w2','w3','w4','w5'].forEach(k => {
+                let el = document.getElementById('pot_'+k);
+                let txt = document.getElementById('txt_'+k);
+                if(el && w[k]!==undefined) {
+                    txt.innerText = w[k].toFixed(2);
+                    el.style.transform = `rotate(${w[k]*270-135}deg)`;
+                    if (w[k] < 0) { el.style.borderColor = "#e74c3c"; } 
+                    else { el.style.borderColor = "#f1c40f"; }
+                }
+            });
+        }
+    }
+
+    function addLog(inps, out, loss, epoch, weights) {
+        stepCount++; // Increments continuously
+        let tbody = document.getElementById('log-body');
+        let tr = document.createElement('tr');
+        
+        // FIX 2: Use stepCount
+        let idx = stepCount;
+        
+        const f = (val) => val !== undefined ? val.toFixed(2) : '-';
+        const displayLoss = (loss !== undefined && loss !== null) ? loss.toFixed(3) : '-';
+
+        tr.innerHTML = `
+            <td>${idx}</td>
+            <td>${inps.x1},${inps.x2}</td>
+            <td>${out.toFixed(2)}</td>
+            <td style="color:${loss<0.1?'green':'red'}">${displayLoss}</td>
+            <td>${f(weights.w0)}</td>
+            <td>${f(weights.w1)}</td>
+            <td>${f(weights.w2)}</td>
+            <td>${f(weights.w3)}</td>
+            <td>${f(weights.w4)}</td>
+            <td>${f(weights.w5)}</td>
+        `;
+        tbody.prepend(tr);
+    }
+    
+    fetch(`/api/${CIRCUIT}/state`).then(r=>r.json()).then(d=>updateUI(d.voltages, d.weights));
+</script>
+{% endblock %}
