@@ -135,18 +135,23 @@ class AnalogXOR(AnalogCircuitBase):
             'w2': np.random.uniform(0.1, 0.9), 'w3': np.random.uniform(0.1, 0.9),
             # Green Box (Output Inputs)
             'w4': np.random.uniform(0.1, 0.9), # + Input
-            'w5': np.random.uniform(0.1, 0.9)  # - Input (Subtracted)
+            'w5': np.random.uniform(0.1, 0.9),  # - Input (Subtracted)
+
+            # Thresholds (biases)
+            'tpos': np.random.uniform(0.5, 0.7),
+            'tneg': np.random.uniform(0.5, 0.7)
+
         }
         self.voltages = {'h_exc': 0.0, 'h_inh': 0.0, 'out': 0.0}
 
-        # Blue Neuron (OR-like): Needs Negative Threshold to detect Mixed (-5, +5) inputs
-        self.act_blue = OpAmpClippedLinear(Rf=100.0, R1=10.0, initial_thresh=-1.0)
+        # Blue Neuron (OR-like): 
+        self.act_blue = OpAmpClippedLinear(Rf=200.0, R1=10.0, initial_thresh=0.0)
         
-        # Red Neuron (AND-like): Needs Positive Threshold to ignore Mixed inputs
-        self.act_red  = OpAmpClippedLinear(Rf=100.0, R1=10.0, initial_thresh=-0.5)
+        # Red Neuron (AND-like): 
+        self.act_red  = OpAmpClippedLinear(Rf=200.0, R1=10.0, initial_thresh=0.0)
         
         # Green Neuron uses the standard defined above so no specific object
-        self.act_green = OpAmpClippedLinear(Rf=100.0, R1=10.0, initial_thresh=2.6)
+        self.act_green = OpAmpClippedLinear(Rf=200.0, R1=10.0, initial_thresh=0.0)
 
     def forward(self, x1, x2):
         """
@@ -155,6 +160,13 @@ class AnalogXOR(AnalogCircuitBase):
         :param x1: digital input 1
         :param x2: digital input 2
         """
+
+        # Get initial thresholds
+        thresh_pos = -5 + (5 - (-5)) * self.weights['tpos']
+        thresh_neg = -5 + (5 - (-5)) * self.weights['tneg']
+
+        self.act_blue.thresh = self.act_green.thresh = thresh_pos
+        self.act_red.thresh = thresh_neg
 
         # 1. Excitatory (Blue)
         s_exc = ((self.get_pot_output(x1, self.weights['w0'])) + (self.get_pot_output(x2, self.weights['w1']))) / 2.0
@@ -220,5 +232,8 @@ class AnalogXOR(AnalogCircuitBase):
         delta_inh = error_inh * slope_inh
         self.gradients['w2'] = -delta_inh * swing_x1
         self.gradients['w3'] = -delta_inh * swing_x2
+
+        self.gradients['tpos'] = delta_out * -10.0 + delta_exc * -10.0
+        self.gradients['tneg'] = delta_inh * 10
         
         return error
