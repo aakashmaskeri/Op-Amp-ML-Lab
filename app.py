@@ -38,8 +38,8 @@ def get_state(ctype):
 def step_forward(ctype):
     c = circuits.get(ctype)
     d = request.get_json(force=True, silent=True)
-    x1 = c.vccp if d.get('x1', 0) == 1 else c.vccm
-    x2 = c.vccp if d.get('x2', 0) == 1 else c.vccm
+    x1 = c.vccp if d.get('x1', 0) == 1 else 0.0
+    x2 = c.vccp if d.get('x2', 0) == 1 else 0.0
     return jsonify(c.forward(x1, x2))
 
 @app.route('/api/<ctype>/step_backward', methods=['POST'])
@@ -55,8 +55,8 @@ def step_backward(ctype):
     if ctype == 'xor': is_high = (x1_log != x2_log)
     
     target = c.vccp if is_high else c.vccm
-    x1 = c.vccp if x1_log == 1 else c.vccm
-    x2 = c.vccp if x2_log == 1 else c.vccm
+    x1 = c.vccp if x1_log == 1 else 0.0
+    x2 = c.vccp if x2_log == 1 else 0.0
 
     error = c.backward(target, x1, x2)
     # Return gradients + squared error for logging
@@ -84,8 +84,8 @@ def train_loop(ctype):
     for epoch in range(epochs):
         for x1_log, x2_log, target_log in truth_table:
             target = c.vccp if target_log == 1 else c.vccm
-            x1 = c.vccp if x1_log == 1 else c.vccm
-            x2 = c.vccp if x2_log == 1 else c.vccm
+            x1 = c.vccp if x1_log == 1 else 0.0
+            x2 = c.vccp if x2_log == 1 else 0.0
             
             c.forward(x1, x2)
             error = c.backward(target, x1, x2)
