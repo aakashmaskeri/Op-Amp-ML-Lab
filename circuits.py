@@ -10,12 +10,35 @@ class AnalogCircuitBase:
         self.weights = {}   
         self.voltages = {}
         self.gradients = {}
+        self.batch_grads = {}
+        self.batch_count = 0
+
+        # --- ADAM PARAMETERS ---
+        self.m = {} # First Moment (Mean)
+        self.v = {} # Second Moment (Uncentered Variance)
+        self.t = 0  # Time step
+        self.beta1 = 0.9
+        self.beta2 = 0.999
+        self.epsilon = 1e-8
        
         # Midpoint is the halfway point
         midpoint = (self.vccp + self.vccm) / 2.0
 
         # Create the op-amp object
         self.act_fn = OpAmpClippedLinear(Rf=100.0, R1=10.0, initial_thresh=2.6)
+
+    def zero_grad(self):
+
+        self.batch_grads = {}
+        self.batch_count = 0
+
+    def accumulate_grad(self):
+        self.batch_count += 1
+        for key in self.gradients:
+            if key not in self.batch_grads:
+                self.batch_grads[key] = 0.0
+            # Accumulate (Sum)
+            self.batch_grads[key] += self.gradients[key]
 
     def set_rails(self, low, high):
         """
@@ -42,22 +65,86 @@ class AnalogCircuitBase:
     def update_weights(self):
         """Standard Gradient Descent with Clipping (0.0 to 1.0)"""
 
-        # Iterate through weights and update weights
-        for key in self.weights:
-            if key in self.gradients:
-                # Use calculated gradients
-                raw_change = self.eta * self.gradients[key]
+        # Increment time step
+        self.t += 1
+            
+        # Iterate directly over the current gradients (No batch accumulation needed for SGD)
+        for key in self.gradients:
+            # 1. Initialize Adam state for new weights
+            if key not in self.m: self.m[key] = 0.0
+            if key not in self.v: self.v[key] = 0.0
 
-                # Clip change to avoid violent swings (+/- 10%)
-                # This was added as the linear region would send 
-                # the weight from close to 1 to close to 0 
-                # and vice-versa frequently
-                clipped_change = max(-0.1, min(0.1, raw_change))
-                self.weights[key] -= clipped_change
-                
-                # Physical Potentiometer Limits (0% to 100%)
-                self.weights[key] = max(0.0, min(1.0, self.weights[key]))
+            # 2. Get Current Gradient (g)
+            g = self.gradients[key]
+
+            # 3. Update First Moment (Momentum)
+            # m = beta1 * m + (1 - beta1) * g
+            self.m[key] = (self.beta1 * self.m[key]) + ((1 - self.beta1) * g)
+
+            # 4. Update Second Moment (Uncentered Variance)
+            # v = beta2 * v + (1 - beta2) * g^2
+            self.v[key] = (self.beta2 * self.v[key]) + ((1 - self.beta2) * (g ** 2))
+
+            # 5. Bias Correction
+            m_hat = self.m[key] / (1 - (self.beta1 ** self.t))
+            v_hat = self.v[key] / (1 - (self.beta2 ** self.t))
+
+            # 6. Calculate Adaptive Update Step
+            adam_step = self.eta * (m_hat / (np.sqrt(v_hat) + self.epsilon))
+
+            # 7. Apply Update with Clipping
+            clipped_step = max(-0.2, min(0.2, adam_step))
+            
+            self.weights[key] -= clipped_step
+            
+            # 8. Physical Potentiometer Limits (0% to 100%)
+            self.weights[key] = max(0.0, min(1.0, self.weights[key]))
+        
+        # Clear gradients after update to be ready for the next sample
+        self.gradients = {}
+        
         return self.weights
+
+        # # Iterate through weights and update weights
+        # for key in self.weights:
+        #     if key in self.gradients:
+        #         # Use calculated gradients
+        #         raw_change = self.eta * self.gradients[key]
+
+        #         # Clip change to avoid violent swings (+/- 10%)
+        #         # This was added as the linear region would send 
+        #         # the weight from close to 1 to close to 0 
+        #         # and vice-versa frequently
+        #         clipped_change = max(-0.1, min(0.1, raw_change))
+        #         self.weights[key] -= clipped_change
+                
+        #         # Physical Potentiometer Limits (0% to 100%)
+        #         self.weights[key] = max(0.0, min(1.0, self.weights[key]))
+        # return self.weights
+    
+        # # Avoid division by zero if called without accumulation
+        # if self.batch_count == 0: self.batch_count = 1
+            
+        # for key in self.batch_grads:
+        #     # 1. Calculate Average Gradient
+        #     avg_grad = self.batch_grads[key] / float(self.batch_count)
+
+        #     # 2. Standard Descent Update
+        #     raw_change = self.eta * avg_grad
+
+        #     # 3. Optional: Clip the change itself (Stability)
+        #     # This prevents a massive error from destroying a weight in 1 step
+        #     clipped_change = max(-0.2, min(0.2, raw_change))
+            
+        #     self.weights[key] -= clipped_change
+            
+        #     # 4. Physical Potentiometer Limits (0% to 100%)
+        #     self.weights[key] = max(0.0, min(1.0, self.weights[key]))
+        
+        # # Clear batch after update so we are ready for next epoch
+        # self.zero_grad()
+        
+        # return self.weights
 
     def reset(self):
         self.__init__()
@@ -130,12 +217,12 @@ class AnalogXOR(AnalogCircuitBase):
         super().__init__()
         self.weights = {
             # Blue Box (Excitatory)
-            'w0': np.random.uniform(0.1, 0.9), 'w1': np.random.uniform(0.1, 0.9),
+            'w0': np.random.uniform(0.5, 0.9), 'w1': np.random.uniform(0.5, 0.9),
             # Red Box (Inhibitory)
-            'w2': np.random.uniform(0.1, 0.9), 'w3': np.random.uniform(0.1, 0.9),
+            'w2': np.random.uniform(0.5, 0.9), 'w3': np.random.uniform(0.5, 0.9),
             # Green Box (Output Inputs)
-            'w4': np.random.uniform(0.1, 0.9), # + Input
-            'w5': np.random.uniform(0.1, 0.9),  # - Input (Subtracted)
+            'w4': np.random.uniform(0.5, 0.9), # + Input
+            'w5': np.random.uniform(0.5, 0.9),  # - Input (Subtracted)
 
             # Thresholds (biases)
             'tpos': np.random.uniform(0.5, 0.7),
@@ -145,13 +232,13 @@ class AnalogXOR(AnalogCircuitBase):
         self.voltages = {'h_exc': 0.0, 'h_inh': 0.0, 'out': 0.0}
 
         # Blue Neuron (OR-like): 
-        self.act_blue = OpAmpClippedLinear(Rf=200.0, R1=10.0, initial_thresh=0.0)
+        self.act_blue = OpAmpClippedLinear(Rf=20.0, R1=10.0, initial_thresh=-1.0)
         
         # Red Neuron (AND-like): 
-        self.act_red  = OpAmpClippedLinear(Rf=200.0, R1=10.0, initial_thresh=0.0)
+        self.act_red  = OpAmpClippedLinear(Rf=20.0, R1=10.0, initial_thresh=+1.0)
         
         # Green Neuron uses the standard defined above so no specific object
-        self.act_green = OpAmpClippedLinear(Rf=200.0, R1=10.0, initial_thresh=0.0)
+        self.act_green = OpAmpClippedLinear(Rf=20.0, R1=10.0, initial_thresh=2.6)
 
     def forward(self, x1, x2):
         """
@@ -162,11 +249,11 @@ class AnalogXOR(AnalogCircuitBase):
         """
 
         # Get initial thresholds
-        thresh_pos = -5 + (5 - (-5)) * self.weights['tpos']
-        thresh_neg = -5 + (5 - (-5)) * self.weights['tneg']
+        # thresh_pos = -5 + (5 - (-5)) * self.weights['tpos']
+        # thresh_neg = -5 + (5 - (-5)) * self.weights['tneg']
 
-        self.act_blue.thresh = self.act_green.thresh = thresh_pos
-        self.act_red.thresh = thresh_neg
+        # self.act_blue.thresh = self.act_green.thresh = thresh_pos
+        # self.act_red.thresh = thresh_neg
 
         # 1. Excitatory (Blue)
         s_exc = ((self.get_pot_output(x1, self.weights['w0'])) + (self.get_pot_output(x2, self.weights['w1']))) / 2.0
@@ -233,7 +320,7 @@ class AnalogXOR(AnalogCircuitBase):
         self.gradients['w2'] = -delta_inh * swing_x1
         self.gradients['w3'] = -delta_inh * swing_x2
 
-        self.gradients['tpos'] = delta_out * -10.0 + delta_exc * -10.0
-        self.gradients['tneg'] = delta_inh * 10
+        # self.gradients['tpos'] = delta_out * -10.0 + delta_exc * -10.0
+        # self.gradients['tneg'] = delta_inh * 10
         
         return error

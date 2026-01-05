@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, render_template
 from circuits import AnalogAND, AnalogXOR
+import random
 
 app = Flask(__name__)
 
@@ -82,6 +83,7 @@ def train_loop(ctype):
     history = []
     
     for epoch in range(epochs):
+        random.shuffle(truth_table)
         for x1_log, x2_log, target_log in truth_table:
             target = c.vccp if target_log == 1 else c.vccm
             x1 = c.vccp if x1_log == 1 else 0.0
@@ -98,6 +100,40 @@ def train_loop(ctype):
                 'loss': error ** 2,
                 'weights': new_w.copy()
             })
+
+    # for epoch in range(epochs):
+    #     total_loss = 0.0
+    #     c.zero_grad()
+
+    #     # --- PROCESS BATCH: Accumulate Gradients for all 4 cases ---
+    #     for x1_log, x2_log, target_log in truth_table:
+    #         # Map Logic (0/1) to Voltages (Min/Max)
+    #         target = c.vccp if target_log == 1 else c.vccm
+    #         x1 = c.vccp if x1_log == 1 else 0.0
+    #         x2 = c.vccp if x2_log == 1 else 0.0
+            
+    #         # Forward Pass
+    #         c.forward(x1, x2)
+            
+    #         # Backward Pass (Calculates gradients for THIS input)
+    #         error = c.backward(target, x1, x2)
+    #         total_loss += error ** 2
+            
+    #         # Accumulate: Add this sample's gradients to the batch pile
+    #         c.accumulate_grad()
+            
+    #     # --- BATCH END: Update Weights ONCE using the average ---
+    #     # This prevents the "zig-zag" oscillation of simple SGD
+    #     new_w = c.update_weights()
+        
+    #     # Logging: We log the average loss and the state after the update
+    #     history.append({
+    #         'epoch': epoch + 1,
+    #         'x1': '-', 'x2': '-', # Inputs irrelevant for batch summary
+    #         'output': 0.0,        # Output irrelevant for batch summary
+    #         'loss': total_loss / 4.0, # Average MSE for the batch
+    #         'weights': new_w.copy()
+    #     })
             
     return jsonify(history)
 
