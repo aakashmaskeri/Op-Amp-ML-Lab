@@ -238,7 +238,7 @@ class AnalogXOR(AnalogCircuitBase):
         self.act_red  = OpAmpClippedLinear(Rf=20.0, R1=10.0, initial_thresh=+1.0)
         
         # Green Neuron uses the standard defined above so no specific object
-        self.act_green = OpAmpClippedLinear(Rf=20.0, R1=10.0, initial_thresh=2.6)
+        self.act_green = OpAmpClippedLinear(Rf=200.0, R1=10.0, initial_thresh=2.6)
 
     def forward(self, x1, x2):
         """
