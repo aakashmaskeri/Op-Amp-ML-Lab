@@ -6,10 +6,11 @@ class OpAmpClippedLinear:
     """
 
     # constructor
-    def __init__(self, Rf, R1, initial_thresh):
+    def __init__(self, Rf, R1, initial_thresh, leak = 0.1):
         self.Rf = float(Rf)
         self.R1 = float(R1)
         self.thresh = float(initial_thresh)
+        self.leak = leak
 
     def get_gain(self):
         """
@@ -30,28 +31,29 @@ class OpAmpClippedLinear:
         
         # Calculate unsaturated gain using differential amplifier formula
         raw_output = self.get_gain() * (signal_sum - self.thresh)
+
+        self.last_raw_out = raw_output
         
         # Hard saturation
         return max(vccm, min(vccp, raw_output))
 
-    def derivative(self, output_voltage, vccm, vccp):
+    def derivative(self, vccm, vccp):
         """
-        Returns the slope.
+        Returns the slope from the previous forward pass of the object
         If Active: Returns Gain.
-        If Saturated: Returns Gain * 0.01 (Leaky Gradient).
-        :param output_voltage: the op-amp output
+        If Saturated: Returns Gain * leak (Leaky Gradient).
         :param vccm: the negative rail voltage
         :param vccp: the positive rail voltage
         """
 
         # Calculate the range of the op-amp
         swing = vccp - vccm
-        epsilon = swing * 0.01 
+        epsilon = swing * 0.05 
 
         # Linear region: get slope
-        if (vccm + epsilon) < output_voltage < (vccp - epsilon):
+        if (vccm + epsilon) < self.last_raw_out < (vccp - epsilon):
             return self.get_gain()
         
         # Leaky logic: to prevent getting stuck,
         # pretend there is a small slope in the flat regions
-        return self.get_gain() * 0.01
+        return self.get_gain() * self.leak

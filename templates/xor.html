@@ -12,11 +12,13 @@
             <div class="potentiometer" id="pot_w1" style="top:100px; left:20px;">w1<br><span id="txt_w1"></span></div>
             <div class="op-amp" style="top:70px; left:140px;"></div>
         </div>
+        
         <div style="position:absolute; top:250px; left:100px; width:220px; height:180px; border:2px solid #e74c3c; border-radius:10px;">
             <div class="potentiometer" id="pot_w2" style="top:30px; left:20px;">w2<br><span id="txt_w2"></span></div>
             <div class="potentiometer" id="pot_w3" style="top:100px; left:20px;">w3<br><span id="txt_w3"></span></div>
             <div class="op-amp" style="top:70px; left:140px;"></div>
         </div>
+        
         <div style="position:absolute; top:120px; left:400px; width:250px; height:220px; border:2px solid #2ecc71; border-radius:10px;">
             <div class="potentiometer" id="pot_w4" style="top:40px; left:30px;">w4 (+)<br><span id="txt_w4"></span></div>
             <div class="potentiometer" id="pot_w5" style="top:120px; left:30px;">w5 (-)<br><span id="txt_w5"></span></div>
@@ -41,6 +43,8 @@
                     <th style="font-size:10px; background:#e74c3c; color:white;">w3</th>
                     <th style="font-size:10px; background:#2ecc71; color:white;">w4</th>
                     <th style="font-size:10px; background:#2ecc71; color:white;">w5</th>
+                    <th style="font-size:10px; background:#9b59b6; color:white;">tpos</th>
+                    <th style="font-size:10px; background:#9b59b6; color:white;">tneg</th>
                 </tr>
             </thead>
             <tbody id="log-body"></tbody>
@@ -60,14 +64,16 @@
     <label>Epochs:</label>
     <input type="number" id="train-epochs" value="50" style="width: 50px; padding: 5px;">
     <button class="action-btn" style="background:#27ae60" onclick="runLoop()">Run Loop</button>
+    <button class="action-btn" style="background:#7f8c8d; margin-left: 10px;" onclick="clearLog()">Clear Log</button>
     <button class="action-btn" style="background:#c0392b; float:right;" onclick="reset()">Reset</button>
 </div>
 
 <script>
     const CIRCUIT = 'xor'; 
-    let inputs = {x1: 0, x2: 0};
-    let stepCount = 0; // GLOBAL COUNTER
+    const MAX_LOG_ROWS = 100; // Optimization: Keep only 100 rows
     
+    let inputs = {x1: 0, x2: 0};
+    let stepCount = 0;
     let lastOut = 0;
     let lastLoss = 0;
 
@@ -102,62 +108,48 @@
         });
         const history = await res.json();
         
-        // OPTIMIZATION: Create a "Fragment" to hold rows in memory
+        // OPTIMIZATION: Build rows in memory (DocumentFragment)
         const fragment = document.createDocumentFragment();
         
-        // Loop through history without touching the actual page
         history.forEach(row => {
-            stepCount++; // Increment global counter
-            
+            stepCount++;
             let tr = document.createElement('tr');
             
-            // Helper to format values safely
             const f = (val) => val !== undefined ? val.toFixed(2) : '-';
             const displayLoss = (row.loss !== undefined && row.loss !== null) ? row.loss.toFixed(3) : '-';
             
-            // Handle different weight columns for AND (w1, w2) vs XOR (w0-w5)
-            // We detect which circuit based on the weights object
-            let weightCols = '';
-            
-            if (row.weights.w0 !== undefined) {
-                // XOR Columns
-                weightCols = `
-                    <td>${f(row.weights.w0)}</td>
-                    <td>${f(row.weights.w1)}</td>
-                    <td>${f(row.weights.w2)}</td>
-                    <td>${f(row.weights.w3)}</td>
-                    <td>${f(row.weights.w4)}</td>
-                    <td>${f(row.weights.w5)}</td>
-                `;
-            } else {
-                // AND Columns
-                weightCols = `
-                    <td>${f(row.weights.w1)}</td>
-                    <td>${f(row.weights.w2)}</td>
-                `;
-            }
-
+            // Reconstruct HTML manually for speed (instead of calling addLog 400 times)
             tr.innerHTML = `
                 <td>${stepCount}</td>
                 <td>${row.x1},${row.x2}</td>
                 <td>${row.output.toFixed(2)}</td>
                 <td style="color:${row.loss < 0.1 ? 'green' : 'red'}">${displayLoss}</td>
-                ${weightCols}
+                <td>${f(row.weights.w0)}</td>
+                <td>${f(row.weights.w1)}</td>
+                <td>${f(row.weights.w2)}</td>
+                <td>${f(row.weights.w3)}</td>
+                <td>${f(row.weights.w4)}</td>
+                <td>${f(row.weights.w5)}</td>
+                <td style="font-weight:bold; color:#8e44ad">${f(row.weights.tpos)}</td>
+                <td style="font-weight:bold; color:#8e44ad">${f(row.weights.tneg)}</td>
             `;
-            
-            // Add to fragment (this is instant)
             fragment.prepend(tr); 
         });
         
-        // SINGLE DOM UPDATE: Add all 400+ rows at once
-        document.getElementById('log-body').prepend(fragment);
+        // Single DOM Update
+        let tbody = document.getElementById('log-body');
+        tbody.prepend(fragment);
         
-        // Update Visuals to the final state
+        // Prune old rows
+        while (tbody.children.length > MAX_LOG_ROWS) {
+            tbody.removeChild(tbody.lastChild);
+        }
+        
+        // Update UI
         if (history.length > 0) {
             let last = history[history.length-1];
             updateUI({out: last.output}, last.weights);
         }
-        
         setButtons(false, true, true);
     }
 
@@ -166,6 +158,11 @@
         location.reload(); 
     }
     
+    function clearLog() {
+        document.getElementById('log-body').innerHTML = '';
+        // Optional: stepCount = 0; 
+    }
+
     function toggleInput(k) {
         inputs[k] = inputs[k] ? 0 : 1;
         document.getElementById(k).style.background = inputs[k] ? '#e74c3c' : '#95a5a6';
@@ -185,7 +182,10 @@
             let val = v.out !== undefined ? v.out : v.v_out;
             if (val !== undefined) {
                 document.getElementById('led-val').innerText = val.toFixed(2) + 'V';
-                document.getElementById('led').style.background = `rgb(0, ${Math.min(255, (val/5.0)*255)}, 0)`;
+                // Bipolar Logic: Map -5...5 to 0...1 range for LED brightness
+                let normalized = (val + 5.0) / 10.0;
+                let intensity = Math.max(0, Math.min(255, normalized * 255));
+                document.getElementById('led').style.background = `rgb(0, ${intensity}, 0)`;
             }
         }
         if(w) {
@@ -203,18 +203,15 @@
     }
 
     function addLog(inps, out, loss, epoch, weights) {
-        stepCount++; // Increments continuously
+        stepCount++;
         let tbody = document.getElementById('log-body');
         let tr = document.createElement('tr');
-        
-        // FIX 2: Use stepCount
-        let idx = stepCount;
         
         const f = (val) => val !== undefined ? val.toFixed(2) : '-';
         const displayLoss = (loss !== undefined && loss !== null) ? loss.toFixed(3) : '-';
 
         tr.innerHTML = `
-            <td>${idx}</td>
+            <td>${stepCount}</td>
             <td>${inps.x1},${inps.x2}</td>
             <td>${out.toFixed(2)}</td>
             <td style="color:${loss<0.1?'green':'red'}">${displayLoss}</td>
@@ -224,8 +221,14 @@
             <td>${f(weights.w3)}</td>
             <td>${f(weights.w4)}</td>
             <td>${f(weights.w5)}</td>
+            <td style="font-weight:bold; color:#8e44ad">${f(weights.tpos)}</td>
+            <td style="font-weight:bold; color:#8e44ad">${f(weights.tneg)}</td>
         `;
         tbody.prepend(tr);
+        
+        if (tbody.children.length > MAX_LOG_ROWS) {
+            tbody.removeChild(tbody.lastChild);
+        }
     }
     
     fetch(`/api/${CIRCUIT}/state`).then(r=>r.json()).then(d=>updateUI(d.voltages, d.weights));
