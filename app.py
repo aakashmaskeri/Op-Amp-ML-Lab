@@ -27,6 +27,11 @@ def page_xor():
 
 @app.route('/api/<ctype>/state', methods=['GET'])
 def get_state(ctype):
+    """
+    Get all current circuit info
+    
+    :param ctype: circuit type
+    """
     c = circuits.get(ctype)
     if not c: return jsonify({'error': 'Invalid circuit'}), 400
     return jsonify({
@@ -37,6 +42,12 @@ def get_state(ctype):
 
 @app.route('/api/<ctype>/step_forward', methods=['POST'])
 def step_forward(ctype):
+    """
+    Do a forward pass of the current circuit
+    
+    :param ctype: circuit type
+    """
+
     c = circuits.get(ctype)
     d = request.get_json(force=True, silent=True)
     x1 = c.vccp if d.get('x1', 0) == 1 else 0.0
@@ -45,6 +56,12 @@ def step_forward(ctype):
 
 @app.route('/api/<ctype>/step_backward', methods=['POST'])
 def step_backward(ctype):
+    """
+    Do a backward pass of the current circuit
+    
+    :param ctype: circuit type
+    """
+
     c = circuits.get(ctype)
     d = request.get_json(force=True, silent=True)
     
@@ -65,34 +82,56 @@ def step_backward(ctype):
 
 @app.route('/api/<ctype>/step_update', methods=['POST'])
 def step_update(ctype):
+    """
+    Update the weights of the circuit 
+    
+    :param ctype: circuit type
+    """
     c = circuits.get(ctype)
     return jsonify(c.update_weights())
 
 @app.route('/api/<ctype>/train_loop', methods=['POST'])
 def train_loop(ctype):
+    """
+    A full training loop for one epoch
+    Uses stochastic gradient descent
+    
+    :param ctype: circuit type
+    """
+
+    # Get data
     c = circuits.get(ctype)
     d = request.get_json(force=True, silent=True)
     epochs = int(d.get('steps', 10))
     
+    # Generate truth tables
     truth_table = []
     if ctype == 'and':
         truth_table = [(0,0,0), (0,1,0), (1,0,0), (1,1,1)]
     elif ctype == 'xor':
         truth_table = [(0,0,0), (0,1,1), (1,0,1), (1,1,0)]
     
+    # Clear history
     history = []
     
+    # Iterate through epochs and perform gradient descent
     for epoch in range(epochs):
+        # Shuffle truth table to make process stochastic
         random.shuffle(truth_table)
+
+        # Iterate through truth table and backpropagate
         for x1_log, x2_log, target_log in truth_table:
+            # Set targets and digital input voltages
             target = c.vccp if target_log == 1 else c.vccm
             x1 = c.vccp if x1_log == 1 else 0.0
             x2 = c.vccp if x2_log == 1 else 0.0
             
+            # Forward pass and backpropagate
             c.forward(x1, x2)
             error = c.backward(target, x1, x2)
             new_w = c.update_weights()
             
+            # Add data to history for display
             history.append({
                 'epoch': epoch + 1,
                 'x1': x1_log, 'x2': x2_log,
@@ -100,50 +139,27 @@ def train_loop(ctype):
                 'loss': error ** 2,
                 'weights': new_w.copy()
             })
-
-    # for epoch in range(epochs):
-    #     total_loss = 0.0
-    #     c.zero_grad()
-
-    #     # --- PROCESS BATCH: Accumulate Gradients for all 4 cases ---
-    #     for x1_log, x2_log, target_log in truth_table:
-    #         # Map Logic (0/1) to Voltages (Min/Max)
-    #         target = c.vccp if target_log == 1 else c.vccm
-    #         x1 = c.vccp if x1_log == 1 else 0.0
-    #         x2 = c.vccp if x2_log == 1 else 0.0
-            
-    #         # Forward Pass
-    #         c.forward(x1, x2)
-            
-    #         # Backward Pass (Calculates gradients for THIS input)
-    #         error = c.backward(target, x1, x2)
-    #         total_loss += error ** 2
-            
-    #         # Accumulate: Add this sample's gradients to the batch pile
-    #         c.accumulate_grad()
-            
-    #     # --- BATCH END: Update Weights ONCE using the average ---
-    #     # This prevents the "zig-zag" oscillation of simple SGD
-    #     new_w = c.update_weights()
-        
-    #     # Logging: We log the average loss and the state after the update
-    #     history.append({
-    #         'epoch': epoch + 1,
-    #         'x1': '-', 'x2': '-', # Inputs irrelevant for batch summary
-    #         'output': 0.0,        # Output irrelevant for batch summary
-    #         'loss': total_loss / 4.0, # Average MSE for the batch
-    #         'weights': new_w.copy()
-    #     })
             
     return jsonify(history)
 
 @app.route('/api/<ctype>/reset', methods=['POST'])
 def reset(ctype):
+    """
+    Reset circuit state
+    
+    :param ctype: circuit type
+    """
+
     circuits.get(ctype).reset()
     return jsonify({'status': 'ok'})
 
 @app.route('/api/<ctype>/set_rails', methods=['POST'])
 def set_rails(ctype):
+    """
+    Set op-amp rail voltages
+    
+    :param ctype: circuit type
+    """
     c = circuits.get(ctype)
     d = request.get_json(force=True, silent=True)
     c.set_rails(d.get('min', 0.0), d.get('max', 5.0))

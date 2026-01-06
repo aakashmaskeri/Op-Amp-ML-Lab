@@ -52,6 +52,7 @@
 
 <script>
     const CIRCUIT = 'and'; 
+    const MAX_LOG_ROWS = 100;
     let inputs = {x1: 0, x2: 0};
     let stepCount = 0; // GLOBAL COUNTER
     
@@ -137,9 +138,15 @@
             fragment.prepend(tr); 
         });
         
-        // SINGLE DOM UPDATE: Add all 400+ rows at once
-        document.getElementById('log-body').prepend(fragment);
-        
+        // SINGLE DOM UPDATE: Add all 400+ rows at once        
+        let tbody = document.getElementById('log-body');
+        tbody.prepend(fragment);
+
+        // Limit rows for performance
+        while (tbody.children.length > MAX_LOG_ROWS) {
+            tbody.removeChild(tbody.lastChild);
+        }
+
         // Update Visuals to the final state
         if (history.length > 0) {
             let last = history[history.length-1];
@@ -209,6 +216,10 @@
             <td>${w2}</td>
         `;
         tbody.prepend(tr);
+
+        while (tbody.children.length > MAX_LOG_ROWS) {
+            tbody.removeChild(tbody.lastChild);
+        }
     }
 
     fetch(`/api/${CIRCUIT}/state`).then(r=>r.json()).then(d=>updateUI(d.voltages, d.weights));

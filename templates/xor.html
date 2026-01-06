@@ -43,8 +43,6 @@
                     <th style="font-size:10px; background:#e74c3c; color:white;">w3</th>
                     <th style="font-size:10px; background:#2ecc71; color:white;">w4</th>
                     <th style="font-size:10px; background:#2ecc71; color:white;">w5</th>
-                    <th style="font-size:10px; background:#9b59b6; color:white;">tpos</th>
-                    <th style="font-size:10px; background:#9b59b6; color:white;">tneg</th>
                 </tr>
             </thead>
             <tbody id="log-body"></tbody>
@@ -130,8 +128,6 @@
                 <td>${f(row.weights.w3)}</td>
                 <td>${f(row.weights.w4)}</td>
                 <td>${f(row.weights.w5)}</td>
-                <td style="font-weight:bold; color:#8e44ad">${f(row.weights.tpos)}</td>
-                <td style="font-weight:bold; color:#8e44ad">${f(row.weights.tneg)}</td>
             `;
             fragment.prepend(tr); 
         });
@@ -221,8 +217,7 @@
             <td>${f(weights.w3)}</td>
             <td>${f(weights.w4)}</td>
             <td>${f(weights.w5)}</td>
-            <td style="font-weight:bold; color:#8e44ad">${f(weights.tpos)}</td>
-            <td style="font-weight:bold; color:#8e44ad">${f(weights.tneg)}</td>
+
         `;
         tbody.prepend(tr);
         

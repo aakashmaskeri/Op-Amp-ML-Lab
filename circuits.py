@@ -4,41 +4,27 @@ from activations import OpAmpClippedLinear
 class AnalogCircuitBase:
     # Constructor
     def __init__(self, eta=0.01):
+        # --- Standard Parameters ---
         self.eta = eta      # greek letter eta, which controls step size for backprop
-        self.vccm = -5.0     # negative rail voltage
+        self.vccm = -5.0    # negative rail voltage
         self.vccp = 5.0     # positive rail voltage
-        self.weights = {}   
-        self.voltages = {}
-        self.gradients = {}
-        self.batch_grads = {}
-        self.batch_count = 0
+        self.weights = {}   # weights dictionary  
+        self.voltages = {}  # voltages dictionary
+        self.gradients = {} # gradients dictionary
 
-        # --- ADAM PARAMETERS ---
-        self.m = {} # First Moment (Mean)
-        self.v = {} # Second Moment (Uncentered Variance)
-        self.t = 0  # Time step
-        self.beta1 = 0.9
-        self.beta2 = 0.999
-        self.epsilon = 1e-8
+        # --- ADAM Parameters ---
+        self.m = {}         # First Moment (Mean)
+        self.v = {}         # Second Moment (Uncentered Variance)
+        self.t = 0          # Time step
+        self.beta1 = 0.9    # Gradient decay rate
+        self.beta2 = 0.999  # Gradient square decay rate
+        self.epsilon = 1e-8 # A small quantity
        
         # Midpoint is the halfway point
         midpoint = (self.vccp + self.vccm) / 2.0
 
         # Create the op-amp object
-        self.act_fn = OpAmpClippedLinear(Rf=100.0, R1=10.0, initial_thresh=2.6)
-
-    def zero_grad(self):
-
-        self.batch_grads = {}
-        self.batch_count = 0
-
-    def accumulate_grad(self):
-        self.batch_count += 1
-        for key in self.gradients:
-            if key not in self.batch_grads:
-                self.batch_grads[key] = 0.0
-            # Accumulate (Sum)
-            self.batch_grads[key] += self.gradients[key]
+        self.act_fn = OpAmpClippedLinear(Rf=100.0, R1=10.0, initial_thresh=2.6) # this thresh used only by AND logic
 
     def set_rails(self, low, high):
         """
@@ -49,8 +35,7 @@ class AnalogCircuitBase:
         """
         self.vccm = float(low)
         self.vccp = float(high)
-        # self.act_fn.thresh = (self.vccp + self.vccm) / 2.0
-        self.act_fn.thresh = 2.6 #threshold is slightly above midpoint
+        self.act_fn.thresh = 2.6 #! threshold is hardcoded for +-5V loigic, slightly above midpoint
 
     def get_pot_output(self, digi_vin, weight):
         """
@@ -68,7 +53,7 @@ class AnalogCircuitBase:
         # Increment time step
         self.t += 1
             
-        # Iterate directly over the current gradients (No batch accumulation needed for SGD)
+        # Iterate directly over the current gradients
         for key in self.gradients:
             # 1. Initialize Adam state for new weights
             if key not in self.m: self.m[key] = 0.0
@@ -77,7 +62,7 @@ class AnalogCircuitBase:
             # 2. Get Current Gradient (g)
             g = self.gradients[key]
 
-            # 3. Update First Moment (Momentum)
+            # 3. Update First Moment (Momentum/Mean)
             # m = beta1 * m + (1 - beta1) * g
             self.m[key] = (self.beta1 * self.m[key]) + ((1 - self.beta1) * g)
 
@@ -93,6 +78,7 @@ class AnalogCircuitBase:
             adam_step = self.eta * (m_hat / (np.sqrt(v_hat) + self.epsilon))
 
             # 7. Apply Update with Clipping
+            # This prevents wild swings as our op-amp has a limited linear region
             clipped_step = max(-0.2, min(0.2, adam_step))
             
             self.weights[key] -= clipped_step
@@ -104,47 +90,6 @@ class AnalogCircuitBase:
         self.gradients = {}
         
         return self.weights
-
-        # # Iterate through weights and update weights
-        # for key in self.weights:
-        #     if key in self.gradients:
-        #         # Use calculated gradients
-        #         raw_change = self.eta * self.gradients[key]
-
-        #         # Clip change to avoid violent swings (+/- 10%)
-        #         # This was added as the linear region would send 
-        #         # the weight from close to 1 to close to 0 
-        #         # and vice-versa frequently
-        #         clipped_change = max(-0.1, min(0.1, raw_change))
-        #         self.weights[key] -= clipped_change
-                
-        #         # Physical Potentiometer Limits (0% to 100%)
-        #         self.weights[key] = max(0.0, min(1.0, self.weights[key]))
-        # return self.weights
-    
-        # # Avoid division by zero if called without accumulation
-        # if self.batch_count == 0: self.batch_count = 1
-            
-        # for key in self.batch_grads:
-        #     # 1. Calculate Average Gradient
-        #     avg_grad = self.batch_grads[key] / float(self.batch_count)
-
-        #     # 2. Standard Descent Update
-        #     raw_change = self.eta * avg_grad
-
-        #     # 3. Optional: Clip the change itself (Stability)
-        #     # This prevents a massive error from destroying a weight in 1 step
-        #     clipped_change = max(-0.2, min(0.2, raw_change))
-            
-        #     self.weights[key] -= clipped_change
-            
-        #     # 4. Physical Potentiometer Limits (0% to 100%)
-        #     self.weights[key] = max(0.0, min(1.0, self.weights[key]))
-        
-        # # Clear batch after update so we are ready for next epoch
-        # self.zero_grad()
-        
-        # return self.weights
 
     def reset(self):
         self.__init__()
@@ -158,6 +103,9 @@ class AnalogAND(AnalogCircuitBase):
     # Constructor
     def __init__(self):
         super().__init__()
+
+        # Full range of initial weights for max randomness
+        # Excludes 0 and 1 to prevent starting with an input blocked/fully passed through
         self.weights = {
             'w1': np.random.uniform(0.1, 0.9),
             'w2': np.random.uniform(0.1, 0.9)
@@ -191,12 +139,13 @@ class AnalogAND(AnalogCircuitBase):
         :param x2: digital input 2
         """
 
-        # Determine error
+        # Determine error using MSE derivative
         out = self.voltages['out']
         error = out - target
         slope = self.act_fn.derivative(self.vccm, self.vccp)
         delta = error * slope
 
+        # Accounts for if negative rail for digital inputs is not zero
         swing_w1 = x1 - self.vccm
         swing_w2 = x2 - self.vccm
 
@@ -208,13 +157,16 @@ class AnalogAND(AnalogCircuitBase):
 class AnalogXOR(AnalogCircuitBase):
     """
     Excitatory (Blue) / Inhibitory (Red) Topology.
-    Subtraction is handled structurally by the Output Diff Amp.
+    Subtraction is handled by adding a negative for the red neuron.
     Weights remain positive (0.0 - 1.0).
     """
 
     # Constructor
     def __init__(self):
         super().__init__()
+
+        # A paper I came across said XOR weights should be initialized between 0.5-1.0 for 100% success
+        # Weights ranging from 0.0-0.5 can cause a local minimum to be descended instead
         self.weights = {
             # Blue Box (Excitatory)
             'w0': np.random.uniform(0.5, 0.9), 'w1': np.random.uniform(0.5, 0.9),
@@ -223,21 +175,16 @@ class AnalogXOR(AnalogCircuitBase):
             # Green Box (Output Inputs)
             'w4': np.random.uniform(0.5, 0.9), # + Input
             'w5': np.random.uniform(0.5, 0.9),  # - Input (Subtracted)
-
-            # Thresholds (biases)
-            'tpos': np.random.uniform(0.5, 0.7),
-            'tneg': np.random.uniform(0.5, 0.7)
-
         }
         self.voltages = {'h_exc': 0.0, 'h_inh': 0.0, 'out': 0.0}
 
-        # Blue Neuron (OR-like): 
+        # Blue Neuron (OR-like): low gain to allow for a greater linear region
         self.act_blue = OpAmpClippedLinear(Rf=20.0, R1=10.0, initial_thresh=-1.0)
         
-        # Red Neuron (AND-like): 
+        # Red Neuron (AND-like): low gain to allow for a greater linear region
         self.act_red  = OpAmpClippedLinear(Rf=20.0, R1=10.0, initial_thresh=+1.0)
         
-        # Green Neuron uses the standard defined above so no specific object
+        # Green Neuron: high gain to encourage saturation for best LED behavior
         self.act_green = OpAmpClippedLinear(Rf=200.0, R1=10.0, initial_thresh=2.6)
 
     def forward(self, x1, x2):
@@ -248,28 +195,21 @@ class AnalogXOR(AnalogCircuitBase):
         :param x2: digital input 2
         """
 
-        # Get initial thresholds
-        # thresh_pos = -5 + (5 - (-5)) * self.weights['tpos']
-        # thresh_neg = -5 + (5 - (-5)) * self.weights['tneg']
-
-        # self.act_blue.thresh = self.act_green.thresh = thresh_pos
-        # self.act_red.thresh = thresh_neg
-
-        # 1. Excitatory (Blue)
+        # 1. Excitatory (Blue): MAC + buffer
         s_exc = ((self.get_pot_output(x1, self.weights['w0'])) + (self.get_pot_output(x2, self.weights['w1']))) / 2.0
         h_exc = self.act_blue.forward(s_exc, self.vccm, self.vccp)
 
-        # 2. Inhibitory (Red)
+        # 2. Inhibitory (Red): Uses inverting summing amp, not MAC + buffer
         s_inh = ((self.get_pot_output(x1, self.weights['w2'])) + (self.get_pot_output(x2, self.weights['w3']))) * -1.0
         h_inh = self.act_red.forward(s_inh, self.vccm, self.vccp)
 
-        # 3. Output (Green) - DIFFERENCE AMPLIFIER
+        # 3. Output (Green): MAC + buffer
         # Output = (Blue * w4) + (Red * w5) where red is already negative
         s_out = ((self.get_pot_output(h_exc, self.weights['w4'])) + \
-                (self.get_pot_output(h_inh, self.weights['w5']))) / 2.0
-        
+                (self.get_pot_output(h_inh, self.weights['w5']))) / 2.0       
         out = self.act_green.forward(s_out, self.vccm, self.vccp)
 
+        # Update all calculated voltages
         self.voltages.update({
             's_exc': s_exc, 'h_exc': h_exc,
             's_inh': s_inh, 'h_inh': h_inh,
@@ -287,6 +227,7 @@ class AnalogXOR(AnalogCircuitBase):
         :param x2: digital input 2
         """
 
+        # Get voltages
         out = self.voltages['out']
         h_exc, h_inh = self.voltages['h_exc'], self.voltages['h_inh']
 
@@ -319,8 +260,5 @@ class AnalogXOR(AnalogCircuitBase):
         delta_inh = error_inh * slope_inh
         self.gradients['w2'] = -delta_inh * swing_x1
         self.gradients['w3'] = -delta_inh * swing_x2
-
-        # self.gradients['tpos'] = delta_out * -10.0 + delta_exc * -10.0
-        # self.gradients['tneg'] = delta_inh * 10
         
         return error

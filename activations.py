@@ -47,6 +47,8 @@ class OpAmpClippedLinear:
         """
 
         # Calculate the range of the op-amp
+        # Use a small offset to assume an op-amp saturates when
+        # very close to the rail
         swing = vccp - vccm
         epsilon = swing * 0.05 
 
